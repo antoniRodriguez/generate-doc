@@ -1,9 +1,0 @@
-{
-  "project_name": "EU Plate Detector v7",
-  "project_type": "license_plate_detection",
-  "model_path": "D:/repos/RDModels/NL_PLATE_DETECTOR/EU/yolov7-tiny/onnx/modelA1X.onnx",
-  "dataset_root": "D:/repos/Dataset-registry/data/nl_plate_detector/europe/original_250x500/test",
-  "metrics_path": "D:/METRICS-TASK/nl_plate_detector/EU/results-yolov7-platedet-EU/metrics.xlsx",
-  "notes": "The model makes cameras explode when used in production.",
-  "output_format": ["markdown", "pdf"]
-}
