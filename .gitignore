@@ -1,0 +1,40 @@
+# --- Python general ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# --- Virtual environments ---
+venv/
+.env/
+.env*/
+.venv/
+
+# --- Build & packaging ---
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# --- IDE / Editor junk ---
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# --- Logs / temp ---
+*.log
+*.tmp
+*.temp
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Reports output ---
+reports/
+
+# --- Ollama artifacts (optional) ---
+*.ollama
