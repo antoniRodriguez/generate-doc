@@ -38,3 +38,6 @@ reports/
 
 # --- Ollama artifacts (optional) ---
 *.ollama
+
+# --- Project configuration file ---
+configs/project_config.json

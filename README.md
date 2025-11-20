@@ -81,12 +81,12 @@ The tool expects a JSON config file with the main paths and metadata.
 Example:
 
     {
-      "project_name": "EU Plate Detector v7",
-      "project_type": "license_plate_detection",
-      "model_path": "./models/plate_detector_eu.onnx",
-      "dataset_root": "D:/repos/Dataset-registry/data/nl_plate_detector/europe/original_250x500/test",
-      "metrics_path": "D:/METRICS-TASK/nl_plate_detector/EU/results-yolov7-platedet-EU/metrics.xlsx",
-      "notes": "Production model for EU plates deployed on ARTPEC-8 cameras.",
+      "project_name": "<PROJECT NAME>",
+      "project_type": "<PROJECT TYPE>",
+      "model_path": "model.onnx",
+      "dataset_root": "path to yolo dataset root folder",
+      "metrics_path": "path to metrics file",
+      "notes": "Additional information",
       "output_format": ["markdown"]
     }
 
