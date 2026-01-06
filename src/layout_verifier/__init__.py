@@ -1,4 +1,4 @@
-# src/docgen/__init__.py
+# src/layout_verifier/__init__.py
 #
 # Package init for layout-verifier.
 

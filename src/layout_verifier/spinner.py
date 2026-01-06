@@ -1,7 +1,7 @@
-# src/docgen/spinner.py
+# src/layout_verifier/spinner.py
 #
 # Simple CLI spinner using a background thread.
-# Used to show activity during the LLM call.
+# Used to show activity during verification.
 
 import threading
 import time

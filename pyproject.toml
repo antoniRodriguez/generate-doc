@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-verify-layouts = "docgen.cli:main"
+verify-layouts = "layout_verifier.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

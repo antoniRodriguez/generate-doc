@@ -1,4 +1,4 @@
-# src/docgen/core.py
+# src/layout_verifier/core.py
 #
 # High-level orchestration for product layout verification:
 # - Load product data from Excel
