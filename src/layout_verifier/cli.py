@@ -1,4 +1,4 @@
-# src/docgen/cli.py
+# src/layout_verifier/cli.py
 #
 # Command-line interface for the product layout verification tool.
 

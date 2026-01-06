@@ -182,7 +182,7 @@ Same content as Markdown, converted to PDF for sharing.
     ├── README.md                # This file
     ├── configs/
     │   └── project_config_template.json
-    └── src/docgen/
+    └── src/layout_verifier/
         ├── __init__.py          # Package exports
         ├── cli.py               # Command-line interface
         ├── core.py              # Main orchestration
@@ -201,7 +201,7 @@ Same content as Markdown, converted to PDF for sharing.
 You can also use the library programmatically:
 
 ```python
-from docgen import verify_layouts, verify_single_product
+from layout_verifier import verify_layouts, verify_single_product
 
 # Batch verification
 summary = verify_layouts(

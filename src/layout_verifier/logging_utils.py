@@ -1,6 +1,6 @@
-# src/docgen/logging_utils.py
+# src/layout_verifier/logging_utils.py
 #
-# Colored logging helpers for the documentation generator.
+# Colored logging helpers for the layout verifier.
 
 RESET = "\033[0m"
 RED = "\033[91m"

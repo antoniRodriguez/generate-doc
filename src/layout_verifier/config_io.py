@@ -1,4 +1,4 @@
-# src/docgen/config_io.py
+# src/layout_verifier/config_io.py
 #
 # JSON config loading, output path decision and markdown saving.
 

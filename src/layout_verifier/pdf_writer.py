@@ -1,4 +1,4 @@
-# src/docgen/pdf_writer.py
+# src/layout_verifier/pdf_writer.py
 #
 # Markdown → PDF conversion using pure Python libraries:
 # - markdown: Markdown → HTML
