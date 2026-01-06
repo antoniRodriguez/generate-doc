@@ -1,19 +1,23 @@
 # layout-verifier
 
-Product layout verification tool for checking consistency between Excel master data and PDF layout files.
+Product layout verification tool for checking consistency between Excel master data and PDF/AI layout files.
 
 ---
 
 ## 1. Introduction
 
-This utility verifies that product information in your Excel master data appears correctly in PDF layout files (product box designs).
+This utility verifies that product information in your Excel master data appears correctly in layout files (product box designs).
 
-Given an Excel file and a directory of PDF layouts, it:
+**Two interfaces available:**
+- **CLI** - Command-line tool for batch verification and scripting
+- **Desktop UI (Furnace)** - Electron-based graphical interface for interactive use
+
+Given an Excel file and layout files, it:
 - Reads product information from Excel (Item#, EAN, descriptions, etc.).
-- Extracts text from PDF layout files using PyMuPDF.
+- Extracts text from PDF/AI layout files using PyMuPDF.
 - Matches each layout to its product via the Item# in the filename.
 - Verifies that all expected text appears in the layout.
-- Generates a verification report showing matches and discrepancies.
+- Generates a verification report or colored Excel output showing matches and discrepancies.
 
 ---
 
@@ -23,27 +27,30 @@ Your company sells products where:
 - Each product has static information (Item#, EAN, descriptions in multiple languages, etc.)
 - This information exists in two sources:
   1. An Excel file (the ground truth)
-  2. PDF layout files (2D box designs with text in various orientations)
+  2. Layout files (2D box designs with text in various orientations)
 
-The tool verifies that all information from the Excel appears in the corresponding PDF layout.
+The tool verifies that all information from the Excel appears in the corresponding layout.
 
 **Matching logic:**
 - Layout files are matched to products by Item#
-- The Item# is extracted from the PDF filename: the substring before the first space
-- Example: `12345 Product Name v2.pdf` matches Item# `12345`
+- The Item# is extracted from the filename: the substring before the first space
+- Example: `12345 Product Name v2.ai` matches Item# `12345`
 
 ---
 
 ## 3. Requirements
 
 - Python 3.10+
+- Node.js 18+ (for Desktop UI only)
 - No external services required (runs entirely locally)
 
 ---
 
 ## 4. Setup
 
-1. **Create a Python virtual environment (optional but recommended)**
+### Python Environment
+
+1. **Create a Python virtual environment (recommended)**
 
    In the project root:
 
@@ -65,11 +72,37 @@ The tool verifies that all information from the Excel appears in the correspondi
 
        pip install -e .
 
+### Desktop UI (Optional)
+
+To use the Electron desktop interface:
+
+    cd electron
+    npm install
+
 ---
 
 ## 5. Usage
 
-### Batch Verification (Directory of PDFs)
+### Desktop UI (Furnace)
+
+The easiest way to use the tool is via the desktop interface:
+
+    cd electron
+    npm start
+
+This launches a native window where you can:
+1. Select an Excel file with product data
+2. Select layout files (.ai) or a folder containing them
+3. Click **Process** to verify
+4. Download the colored Excel result (green = found, red = missing, yellow = partial)
+
+Alternatively, run the web server directly:
+
+    furnace-ui
+
+Then open http://localhost:8000 in your browser.
+
+### CLI: Batch Verification (Directory of PDFs)
 
     verify-layouts --excel products.xlsx --layouts-dir ./layouts/
 
@@ -80,7 +113,7 @@ Options:
 - `--format`, `-f`: Report format: `markdown`, `csv`, or `pdf` (default: markdown)
 - `--columns`, `-C`: Specific columns to verify (optional, uses defaults)
 
-### Single File Verification
+### CLI: Single File Verification
 
     verify-layouts --excel products.xlsx --pdf "12345 Product Layout.pdf"
 
@@ -109,10 +142,10 @@ Options:
 The Excel file should have:
 - One product per row
 - Column headers in the first row
-- An `Item#` column for matching to PDF filenames
+- An `Item#` column for matching to layout filenames
 
 Default columns verified (case-insensitive matching):
-- `Item#` - Product identifier (used for matching, not verified)
+- `Item#` - Product identifier (used for matching)
 - `EAN` - European Article Number / barcode
 - `Serial` - Serial number
 - `Name ENG` - English product name
@@ -126,30 +159,30 @@ You can specify custom columns using the `--columns` option.
 
 ---
 
-## 7. PDF Layout Files
+## 7. Layout Files
 
 Requirements:
-- PDF files with text content (not scanned images)
-- Filename format: `<Item#> <anything>.pdf`
-  - Example: `12345 Product Box Layout v3.pdf`
+- PDF or AI files with text content (not scanned images)
+- Filename format: `<Item#> <anything>.pdf` or `<Item#> <anything>.ai`
+  - Example: `12345 Product Box Layout v3.ai`
   - The Item# is extracted as everything before the first space
 
 The tool uses PyMuPDF to extract text, which works well with:
 - Vector text (text created in design software)
 - Text at any orientation (horizontal, vertical, rotated)
-- Multi-page PDFs
+- Multi-page documents
 
-**Note:** If your PDFs are scanned images, you'll need OCR support (not included in this version).
+**Note:** If your files are scanned images, you'll need OCR support (not included in this version).
 
 ---
 
 ## 8. Verification Logic
 
-For each PDF layout:
+For each layout:
 1. Extract Item# from filename
 2. Find matching product row in Excel
 3. For each field in Excel:
-   - Try exact match in PDF text
+   - Try exact match in layout text
    - Try case-insensitive match
    - Try word-by-word match (for multi-word values split across lines)
    - Try numeric normalization (for EAN codes with/without separators)
@@ -157,42 +190,59 @@ For each PDF layout:
 
 ---
 
-## 9. Output Reports
+## 9. Output
 
-### Markdown Report
-Human-readable report with:
+### CLI Reports
+
+**Markdown Report** - Human-readable report with:
 - Summary statistics
 - List of products with missing fields (showing what's missing)
 - List of fully verified products
 
-### CSV Report
-Machine-readable format for further processing:
+**CSV Report** - Machine-readable format for further processing:
 - One row per product
 - Columns: Item#, Layout File, Total Fields, Matched, Missing, Success Rate, Status, Missing Fields
 
-### PDF Report
-Same content as Markdown, converted to PDF for sharing.
+**PDF Report** - Same content as Markdown, converted to PDF for sharing.
+
+### Desktop UI Output
+
+The Furnace UI produces a **colored Excel file**:
+- **Green cells**: Field value found in the layout
+- **Red cells**: Field value not found
+- **Yellow cells**: Partial match
 
 ---
 
 ## 10. Project Structure
 
     layout-verifier/
-    ├── pyproject.toml           # Package configuration
-    ├── README.md                # This file
+    ├── pyproject.toml              # Package configuration
+    ├── README.md                   # This file
     ├── configs/
     │   └── project_config_template.json
-    └── src/layout_verifier/
-        ├── __init__.py          # Package exports
-        ├── cli.py               # Command-line interface
-        ├── core.py              # Main orchestration
-        ├── excel_reader.py      # Excel file parsing
-        ├── layout_reader.py     # PDF text extraction
-        ├── verifier.py          # String matching logic
-        ├── report_writer.py     # Report generation
-        ├── logging_utils.py     # Console output formatting
-        ├── spinner.py           # Progress indicator
-        └── pdf_writer.py        # PDF report output
+    ├── electron/                   # Desktop UI (Electron)
+    │   ├── main.js                 # Main process
+    │   ├── preload.js              # IPC bridge
+    │   ├── package.json            # Node dependencies
+    │   └── error.html              # Error page
+    └── src/
+        ├── layout_verifier/        # Core Python library
+        │   ├── __init__.py         # Package exports
+        │   ├── cli.py              # Command-line interface
+        │   ├── core.py             # Main orchestration
+        │   ├── excel_reader.py     # Excel file parsing
+        │   ├── layout_reader.py    # PDF/AI text extraction
+        │   ├── verifier.py         # String matching logic
+        │   ├── report_writer.py    # Report generation
+        │   ├── logging_utils.py    # Console output formatting
+        │   ├── spinner.py          # Progress indicator
+        │   └── pdf_writer.py       # PDF report output
+        └── web/                    # Web UI (FastAPI)
+            ├── app.py              # FastAPI application
+            ├── routes.py           # API endpoints
+            ├── static/             # CSS, JS assets
+            └── templates/          # HTML templates
 
 ---
 
@@ -229,7 +279,7 @@ if result:
 
 ## 12. Limitations
 
-- PDF text extraction only (no OCR for scanned images)
-- Assumes specific filename format (`Item# <rest>.pdf`)
+- Text extraction only (no OCR for scanned images)
+- Assumes specific filename format (`Item# <rest>.pdf` or `.ai`)
 - String matching may not catch all typography variations (fonts, special characters)
 - Does not verify visual layout or positioning, only text presence
