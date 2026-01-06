@@ -3,25 +3,26 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "model-docgen"
+name = "layout-verifier"
 version = "0.1.0"
-description = "Local DeepSeek-based documentation generator for internal ML projects."
+description = "Verify product information consistency between Excel master data and PDF layout files."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
   { name = "Antoni Rodriguez" }
 ]
 dependencies = [
-  "ollama>=0.3.0",
-  "pandas>=2.3.3",
-  "openpyxl>=3.1.5",
-  "onnx>=1.10.0",
+  "pandas>=2.0.0",
+  "openpyxl>=3.1.0",
+  "pymupdf>=1.23.0",
   "markdown>=3.6",
-  "xhtml2pdf>=0.2.15"
+  "xhtml2pdf>=0.2.15",
+  "pyzbar>=0.1.9",
+  "Pillow>=10.0.0"
 ]
 
 [project.scripts]
-generate-doc = "docgen.cli:main"
+verify-layouts = "docgen.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

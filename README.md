@@ -1,57 +1,49 @@
-# model-docgen
+# layout-verifier
 
-Local documentation generator for internal computer vision / deep learning projects.  
-It runs a local DeepSeek model via Ollama, inspects your dataset, metrics and ONNX model, and produces a Markdown report.
+Product layout verification tool for checking consistency between Excel master data and PDF layout files.
 
 ---
 
 ## 1. Introduction
 
-This utility is meant to be a small internal tool, not a framework.
+This utility verifies that product information in your Excel master data appears correctly in PDF layout files (product box designs).
 
-Given a JSON config, it:
-- Reads basic project info (name, type, notes).
-- Analyses a YOLO-style dataset (images, labels, classes).
-- Reads metrics from an Excel file.
-- Inspects an ONNX model (inputs, outputs, parameter count).
-- Sends a structured prompt to a local DeepSeek model.
-- Saves a Markdown document with a professional, wiki-style structure.
+Given an Excel file and a directory of PDF layouts, it:
+- Reads product information from Excel (Item#, EAN, descriptions, etc.).
+- Extracts text from PDF layout files using PyMuPDF.
+- Matches each layout to its product via the Item# in the filename.
+- Verifies that all expected text appears in the layout.
+- Generates a verification report showing matches and discrepancies.
 
 ---
 
-## 2. What this is
+## 2. Use Case
 
-- A command-line tool: you run `generate-doc --config config.json`.
-- Model-agnostic on the ML side: it just reads dataset, metrics and ONNX.
-- Opinionated on structure: project types like license plate detection, character detection, and vehicle detection have internal templates and descriptions that guide the generated documentation.
+Your company sells products where:
+- Each product has static information (Item#, EAN, descriptions in multiple languages, etc.)
+- This information exists in two sources:
+  1. An Excel file (the ground truth)
+  2. PDF layout files (2D box designs with text in various orientations)
 
-It is not:
-- A training pipeline.
-- A deployment tool.
-- A replacement for your experiment tracking.
+The tool verifies that all information from the Excel appears in the corresponding PDF layout.
+
+**Matching logic:**
+- Layout files are matched to products by Item#
+- The Item# is extracted from the PDF filename: the substring before the first space
+- Example: `12345 Product Name v2.pdf` matches Item# `12345`
 
 ---
 
 ## 3. Requirements
 
 - Python 3.10+
-- Ollama installed on your machine
-- A local DeepSeek model available in Ollama (by default: `deepseek-r1:8b`)
+- No external services required (runs entirely locally)
 
 ---
 
 ## 4. Setup
 
-1. **Install Ollama for Windows**
-
-   Download and install from:  
-   https://ollama.com/download/windows
-
-2. **Pull the DeepSeek model**
-
-       ollama pull deepseek-r1:8b
-
-3. **Create a Python virtual environment (optional but recommended)**
+1. **Create a Python virtual environment (optional but recommended)**
 
    In the project root:
 
@@ -67,7 +59,7 @@ It is not:
 
          .\venv\Scripts\activate
 
-4. **Install the project in editable mode**
+2. **Install the project in editable mode**
 
    From the project root (where `pyproject.toml` lives):
 
@@ -75,131 +67,169 @@ It is not:
 
 ---
 
-## 5. Configuration
+## 5. Usage
 
-The tool expects a JSON config file with the main paths and metadata.  
-Example:
+### Batch Verification (Directory of PDFs)
 
-    {
-      "project_name": "<PROJECT NAME>",
-      "project_type": "<PROJECT TYPE>",
-      "model_path": "model.onnx",
-      "dataset_root": "path to yolo dataset root folder",
-      "metrics_path": "path to metrics file",
-      "notes": "Additional information",
-      "output_format": ["markdown"]
-    }
+    verify-layouts --excel products.xlsx --layouts-dir ./layouts/
 
-Key fields:
+Options:
+- `--excel`, `-e`: Path to Excel file with product data (required)
+- `--layouts-dir`, `-d`: Directory containing PDF layout files
+- `--output`, `-o`: Output path for report (default: verification_report.md)
+- `--format`, `-f`: Report format: `markdown`, `csv`, or `pdf` (default: markdown)
+- `--columns`, `-C`: Specific columns to verify (optional, uses defaults)
 
-- `project_name`  
-  Used as the main title of the generated document.
+### Single File Verification
 
-- `project_type`  
-  Used to load internal descriptions and recommended sections.  
-  Currently supported:
-  - `license_plate_detection`
-  - `character_detection`
-  - `vehicle_detection`
+    verify-layouts --excel products.xlsx --pdf "12345 Product Layout.pdf"
 
-- `model_path`  
-  Path to the ONNX model. Used to extract:
-  - Inputs (names, dtypes, shapes)
-  - Outputs (names, dtypes, shapes)
-  - Approximate number of parameters
+Options:
+- `--pdf`, `-p`: Path to a single PDF file
+- `--item`, `-i`: Override Item# (instead of extracting from filename)
 
-- `dataset_root`  
-  Root of a YOLO-style dataset:
-  - `images/`
-  - `labels/`
-  - `classes.txt`  
-  Used to compute:
-  - Number of images
-  - Number of objects
-  - Per-class object counts
+### Examples
 
-- `metrics_path`  
-  Excel file with a worksheet named `raw-results` and rows by class plus an `all` row.  
-  Used to include a concise performance summary.
+    # Verify all layouts in a directory
+    verify-layouts -e data/products.xlsx -d data/layouts/ -o report.md
 
-- `notes`  
-  Free text that is passed to the model as additional context.
+    # Generate CSV report for further processing
+    verify-layouts -e products.xlsx -d layouts/ -f csv -o results.csv
 
-- `output_format`  
-  Currently expected to contain `"markdown"`. In the PoC this simply means it writes a `*.md` file.
+    # Verify specific columns only
+    verify-layouts -e products.xlsx -d layouts/ -C "Item#" "EAN" "Name ENG"
+
+    # Verify a single file
+    verify-layouts -e products.xlsx -p "12345 My Product.pdf"
 
 ---
 
-## 6. Usage
+## 6. Excel Format
 
-From the project root:
+The Excel file should have:
+- One product per row
+- Column headers in the first row
+- An `Item#` column for matching to PDF filenames
 
-    generate-doc --config path/to/config.json
+Default columns verified (case-insensitive matching):
+- `Item#` - Product identifier (used for matching, not verified)
+- `EAN` - European Article Number / barcode
+- `Serial` - Serial number
+- `Name ENG` - English product name
+- `Name ES`, `Name FR`, `Name DE`, `Name IT`, `Name PT` - Localized names
+- `address under EAN/barcode` - Address text
+- `origin (next to EAN/barcode)` - Country of origin
+- `type of packaging` - Packaging type
+- `Batch no:` - Batch number
 
-What happens:
-
-1. The tool loads the config.
-2. If `dataset_root` is set:
-   - Counts images and label files.
-   - Computes per-class object counts based on YOLO labels.
-3. If `metrics_path` is set:
-   - Reads the `raw-results` sheet from the Excel file.
-   - Extracts per-class metrics and the aggregated `all` row.
-4. If `model_path` is set:
-   - Loads the ONNX model.
-   - Extracts input/output tensors and parameter count.
-5. Looks up the project type (`license_plate_detection`, `character_detection`, `vehicle_detection`) and adds the corresponding internal description and recommended sections.
-6. Builds a structured prompt and sends it to the local DeepSeek model via Ollama.
-7. Saves the generated Markdown file in the `reports/` folder (by default).
+You can specify custom columns using the `--columns` option.
 
 ---
 
-## 7. Logic (technical overview)
+## 7. PDF Layout Files
 
-High-level structure:
+Requirements:
+- PDF files with text content (not scanned images)
+- Filename format: `<Item#> <anything>.pdf`
+  - Example: `12345 Product Box Layout v3.pdf`
+  - The Item# is extracted as everything before the first space
 
-- `docgen/core.py`  
-  Orchestrates the flow: config → dataset/metrics/onnx info → prompt → LLM → Markdown.
+The tool uses PyMuPDF to extract text, which works well with:
+- Vector text (text created in design software)
+- Text at any orientation (horizontal, vertical, rotated)
+- Multi-page PDFs
 
-- `docgen/dataset_info.py`  
-  Analyses YOLO datasets:
-  - Counts images.
-  - Counts objects per class using `labels/` and `classes.txt`.
-
-- `docgen/metrics_info.py`  
-  Reads an Excel workbook (sheet `raw-results`) and extracts:
-  - Per-class metrics (Precision, Recall, F1, AP@0.5, GT, TP, FP, FN, Wrong Class).
-  - A global `all` row.
-
-- `docgen/onnx_info.py`  
-  Loads an ONNX model and extracts:
-  - Input / output tensor names, dtypes and shapes.
-  - Approximate number of parameters.
-
-- `docgen/project_types.py`  
-  Contains internal templates for:
-  - License plate detection
-  - Character detection
-  - Vehicle detection  
-  Each template includes a textual task description, data notes and recommended sections.
-
-- `docgen/prompt_builder.py`  
-  Assembles a single user prompt string containing:
-  - Project metadata
-  - Project-type details
-  - Dataset summary
-  - Metrics summary
-  - ONNX technical summary  
-  This prompt is passed to the DeepSeek model.
-
-- `docgen/logging_utils.py` and `docgen/spinner.py`  
-  Provide colored logs and a small spinner while the LLM is generating the document, so the user sees that the tool is alive.
+**Note:** If your PDFs are scanned images, you'll need OCR support (not included in this version).
 
 ---
 
-## 8. Notes and limitations
+## 8. Verification Logic
 
-- Assumes datasets follow a simple YOLO layout; other structures are not handled.
-- Assumes metrics Excel has a `raw-results` sheet with a `Class` column and an `all` row.
-- Assumes the model is in ONNX format; other model formats are not inspected.
-- The tool does not perform any training or evaluation; it only reads existing artefacts and generates documentation.
+For each PDF layout:
+1. Extract Item# from filename
+2. Find matching product row in Excel
+3. For each field in Excel:
+   - Try exact match in PDF text
+   - Try case-insensitive match
+   - Try word-by-word match (for multi-word values split across lines)
+   - Try numeric normalization (for EAN codes with/without separators)
+4. Report which fields were found and which are missing
+
+---
+
+## 9. Output Reports
+
+### Markdown Report
+Human-readable report with:
+- Summary statistics
+- List of products with missing fields (showing what's missing)
+- List of fully verified products
+
+### CSV Report
+Machine-readable format for further processing:
+- One row per product
+- Columns: Item#, Layout File, Total Fields, Matched, Missing, Success Rate, Status, Missing Fields
+
+### PDF Report
+Same content as Markdown, converted to PDF for sharing.
+
+---
+
+## 10. Project Structure
+
+    layout-verifier/
+    ├── pyproject.toml           # Package configuration
+    ├── README.md                # This file
+    ├── configs/
+    │   └── project_config_template.json
+    └── src/docgen/
+        ├── __init__.py          # Package exports
+        ├── cli.py               # Command-line interface
+        ├── core.py              # Main orchestration
+        ├── excel_reader.py      # Excel file parsing
+        ├── layout_reader.py     # PDF text extraction
+        ├── verifier.py          # String matching logic
+        ├── report_writer.py     # Report generation
+        ├── logging_utils.py     # Console output formatting
+        ├── spinner.py           # Progress indicator
+        └── pdf_writer.py        # PDF report output
+
+---
+
+## 11. Programmatic Usage
+
+You can also use the library programmatically:
+
+```python
+from docgen import verify_layouts, verify_single_product
+
+# Batch verification
+summary = verify_layouts(
+    excel_path="products.xlsx",
+    layouts_dir="./layouts/",
+    output_path="report.md",
+    output_format="markdown"
+)
+
+print(f"Verified: {summary.products_verified}")
+print(f"Complete: {summary.products_complete}")
+print(f"Success rate: {summary.overall_success_rate:.1f}%")
+
+# Single product verification
+result = verify_single_product(
+    excel_path="products.xlsx",
+    pdf_path="12345 Product.pdf"
+)
+
+if result:
+    print(f"Fields matched: {result['matched_fields']}/{result['total_fields']}")
+```
+
+---
+
+## 12. Limitations
+
+- PDF text extraction only (no OCR for scanned images)
+- Assumes specific filename format (`Item# <rest>.pdf`)
+- String matching may not catch all typography variations (fonts, special characters)
+- Does not verify visual layout or positioning, only text presence

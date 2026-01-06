@@ -1,151 +1,212 @@
 # src/docgen/core.py
 #
-# High-level orchestration:
-# - Load config
-# - Extract dataset info (YOLO-style) if dataset_root is provided
-# - Extract metrics info from Excel if metrics_path is provided
-# - Extract ONNX technical info if model_path is provided
-# - Build prompt (including dataset, metrics, and ONNX summaries when available)
-# - Detect GPU and print hints
-# - Show spinner while calling the LLM
-# - Save Markdown report
-# - Save PDF report (optional)
-from typing import Optional, Dict, Any
+# High-level orchestration for product layout verification:
+# - Load product data from Excel
+# - Scan layout directory for PDF files
+# - For each layout: extract text, match to product, verify fields
+# - Generate verification report
 
-from ollama import chat, ChatResponse
+from pathlib import Path
+from typing import Optional
 
-from .config_io import load_project_config, decide_output_path, save_markdown
-from .hardware import detect_gpu, infer_model_size_label, print_gpu_and_model_hint
-from .prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from .excel_reader import load_product_data, get_product_by_item_number, get_verification_fields
+from .layout_reader import scan_layout_directory, extract_text_from_layout
+from .verifier import verify_product_fields, VerificationSummary
+from .report_writer import generate_report, save_report
 from .spinner import Spinner
-from .logging_utils import log_info, log_llm, log_warning
-from .dataset_info import extract_dataset_info
-from .metrics_info import extract_metrics_info
-from .onnx_info import extract_onnx_info
-from .pdf_writer import save_pdf_from_markdown
+from .logging_utils import log_info, log_warning, log_error
 
 
-DEFAULT_MODEL_NAME = "deepseek-r1:8b"
-
-
-def generate_documentation(
-    config_path: str,
-    model_name: Optional[str] = None,
-    out_path: Optional[str] = None,
-) -> str:
+def verify_layouts(
+    excel_path: str,
+    layouts_dir: str,
+    output_path: Optional[str] = None,
+    output_format: str = "markdown",
+    columns: Optional[list[str]] = None,
+    extension: str = ".ai",
+) -> VerificationSummary:
     """
-    High-level function that:
-    - loads the project JSON
-    - extracts dataset information (if dataset_root is provided)
-    - extracts metrics information from Excel (if metrics_path is provided)
-    - extracts ONNX model information (if model_path is provided)
-    - builds the LLM prompt
-    - detects GPU and prints hints
-    - shows a spinner while calling the DeepSeek model via Ollama
-    - saves the Markdown report
+    Verify product information consistency between Excel and layout files.
 
-    Returns the output path used.
+    Main orchestration function that:
+    1. Loads product master data from Excel
+    2. Scans the layouts directory for layout files (.ai or .pdf)
+    3. For each layout, extracts text and verifies against Excel data
+    4. Generates a verification report
+
+    Args:
+        excel_path: Path to the Excel file with product master data.
+        layouts_dir: Directory containing layout files.
+        output_path: Path for the output report (optional).
+        output_format: Report format - "markdown", "pdf", or "csv".
+        columns: List of Excel columns to verify (optional, uses defaults if not provided).
+        extension: File extension to scan for (default: ".ai").
+
+    Returns:
+        VerificationSummary with all verification results.
     """
 
-    if model_name is None:
-        model_name = DEFAULT_MODEL_NAME
-
-    # 1) Load config
-    log_info(f"Loading project configuration from '{config_path}'...")
-    project_info: Dict[str, Any] = load_project_config(config_path)
-    log_info("Configuration loaded successfully. ✔")
-
-    # 2) Extract dataset info (if dataset_root present)
-    dataset_info: Optional[Dict[str, Any]] = None
-    dataset_root = project_info.get("dataset_root")
-
-    if isinstance(dataset_root, str) and dataset_root.strip():
-        log_info(f"Extracting dataset information from '{dataset_root}'...")
-        dataset_info = extract_dataset_info(dataset_root)
-        log_info("Dataset information extracted. ✔")
-    else:
-        log_warning(
-            "No 'dataset_root' provided in config or it is empty; "
-            "skipping dataset analysis."
-        )
-
-    # 3) Extract metrics info (if metrics_path present)
-    metrics_info: Optional[Dict[str, Any]] = None
-    metrics_path = project_info.get("metrics_path")
-
-    if isinstance(metrics_path, str) and metrics_path.strip():
-        log_info(f"Extracting metrics information from '{metrics_path}'...")
-        metrics_info = extract_metrics_info(metrics_path)
-        log_info("Metrics information extracted. ✔")
-    else:
-        log_warning(
-            "No 'metrics_path' provided in config or it is empty; "
-            "skipping metrics analysis."
-        )
-
-    # 4) Extract ONNX info (if model_path present)
-    onnx_info: Optional[Dict[str, Any]] = None
-    model_path = project_info.get("model_path")
-
-    if isinstance(model_path, str) and model_path.strip():
-        log_info(f"Extracting ONNX model information from '{model_path}'...")
-        onnx_info = extract_onnx_info(model_path)
-        log_info("ONNX model information extracted. ✔")
-    else:
-        log_warning(
-            "No 'model_path' provided in config or it is empty; "
-            "skipping ONNX model analysis."
-        )
-
-    # 5) Build prompt (project info + optional dataset + optional metrics + optional ONNX)
-    log_info("Building prompt for the documentation...")
-    user_prompt = build_user_prompt(
-        project_info,
-        dataset_info=dataset_info,
-        metrics_info=metrics_info,
-        onnx_info=onnx_info,
-    )
-    log_info("Prompt built. ✔")
-
-    # 6) Decide output path
-    output_md_path = decide_output_path(project_info, out_path)
-    log_info(f"Documentation will be saved to '{output_md_path}'.")
-
-    # 7) GPU + model hints
-    gpu_info = detect_gpu()
-    model_size_label = infer_model_size_label(model_name)
-    print_gpu_and_model_hint(gpu_info, model_name, model_size_label)
-
-    # 8) Spinner during LLM call
-    spinner = Spinner("Generating documentation...")
-    log_llm("Sending prompt to the model.")
-    spinner.start()
+    # 1) Load product data from Excel
+    log_info(f"Loading product data from '{excel_path}'...")
     try:
-        response: ChatResponse = chat(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        products_df = load_product_data(excel_path, columns=columns)
+    except (FileNotFoundError, ValueError) as e:
+        log_error(f"Failed to load Excel: {e}")
+        raise
+
+    log_info(f"Loaded {len(products_df)} products from Excel.")
+
+    # 2) Initialize summary
+    summary = VerificationSummary(total_products=len(products_df))
+
+    # 3) Scan layouts directory and verify each
+    log_info(f"Scanning layouts directory: {layouts_dir}")
+
+    spinner = Spinner("Verifying layouts...")
+    spinner.start()
+
+    try:
+        layouts_processed = 0
+        for layout_path, item_number in scan_layout_directory(layouts_dir, extension=extension):
+            layouts_processed += 1
+
+            # Get product data from Excel
+            product_data = get_product_by_item_number(products_df, item_number)
+
+            if product_data is None:
+                log_warning(f"No Excel entry for Item# '{item_number}' ({layout_path.name})")
+                summary.add_unmatched_layout(layout_path.name)
+                continue
+
+            # Extract fields to verify
+            expected_fields = get_verification_fields(product_data)
+
+            if not expected_fields:
+                log_warning(f"No fields to verify for Item# '{item_number}'")
+                continue
+
+            # Extract text from layout file
+            try:
+                layout_text = extract_text_from_layout(layout_path)
+            except (FileNotFoundError, ValueError) as e:
+                log_error(f"Failed to read layout {layout_path.name}: {e}")
+                continue
+
+            # Verify fields
+            result = verify_product_fields(
+                item_number=item_number,
+                layout_file=layout_path.name,
+                expected_fields=expected_fields,
+                layout_text=layout_text,
+            )
+
+            summary.add_result(result)
+
     finally:
         spinner.stop()
 
-    log_llm("Generation complete. ✔")
+    log_info(f"Processed {layouts_processed} layout files.")
+    log_info(
+        f"Results: {summary.products_complete} complete, "
+        f"{summary.products_partial} partial, "
+        f"{summary.layouts_without_match} unmatched"
+    )
 
-    # 9) Save Markdown + optional PDF
-    doc_text = response.message.content
-    log_info("Saving documentation...")
+    # 4) Generate and save report
+    if output_path:
+        log_info(f"Generating {output_format} report...")
+        report_content = generate_report(summary, output_format)
+        save_report(report_content, output_path, output_format)
+        log_info(f"Report saved to '{output_path}'.")
+    else:
+        # Default output path
+        output_path = str(Path(layouts_dir).parent / "verification_report.md")
+        log_info(f"Generating report at default location...")
+        report_content = generate_report(summary, "markdown")
+        save_report(report_content, output_path, "markdown")
+        log_info(f"Report saved to '{output_path}'.")
 
-    formats = project_info.get("output_format", ["markdown"])
+    return summary
 
-    if "markdown" in formats:
-        save_markdown(doc_text, output_md_path)
-        log_info("Markdown saved. ✔")
 
-    if "pdf" in formats:
-        pdf_path = output_md_path.replace(".md", ".pdf")
-        save_pdf_from_markdown(doc_text, pdf_path)
-        log_info(f"PDF saved to '{pdf_path}'. ✔")
+def verify_single_product(
+    excel_path: str,
+    layout_path: str,
+    item_number: Optional[str] = None,
+    columns: Optional[list[str]] = None,
+) -> Optional[dict]:
+    """
+    Verify a single product layout against Excel data.
 
-    log_info("All requested formats saved successfully.")
+    Useful for testing or verifying individual files.
+
+    Args:
+        excel_path: Path to the Excel file with product master data.
+        layout_path: Path to a single layout file (.ai or .pdf).
+        item_number: The Item# to look up (if None, extracted from filename).
+        columns: List of Excel columns to verify.
+
+    Returns:
+        Dictionary with verification result, or None if verification failed.
+    """
+    from .layout_reader import extract_item_number_from_filename
+
+    # Determine item number
+    if item_number is None:
+        item_number = extract_item_number_from_filename(layout_path)
+        if item_number is None:
+            log_error(f"Could not extract Item# from filename: {layout_path}")
+            return None
+
+    log_info(f"Verifying Item# '{item_number}'...")
+
+    # Load product data
+    try:
+        products_df = load_product_data(excel_path, columns=columns)
+    except (FileNotFoundError, ValueError) as e:
+        log_error(f"Failed to load Excel: {e}")
+        return None
+
+    # Get product
+    product_data = get_product_by_item_number(products_df, item_number)
+    if product_data is None:
+        log_error(f"No Excel entry for Item# '{item_number}'")
+        return None
+
+    # Get fields to verify
+    expected_fields = get_verification_fields(product_data)
+
+    # Extract text from layout file
+    try:
+        layout_text = extract_text_from_layout(layout_path)
+    except (FileNotFoundError, ValueError) as e:
+        log_error(f"Failed to read layout: {e}")
+        return None
+
+    # Verify
+    result = verify_product_fields(
+        item_number=item_number,
+        layout_file=Path(layout_path).name,
+        expected_fields=expected_fields,
+        layout_text=layout_text,
+    )
+
+    # Return as dict
+    return {
+        "item_number": result.item_number,
+        "layout_file": result.layout_file,
+        "total_fields": result.total_fields,
+        "matched_fields": result.matched_fields,
+        "missing_fields": result.missing_fields,
+        "success_rate": result.success_rate,
+        "is_complete": result.is_complete,
+        "field_results": [
+            {
+                "field": fr.field_name,
+                "expected": fr.expected_value,
+                "found": fr.found,
+                "match_type": fr.match_type,
+            }
+            for fr in result.field_results
+        ],
+    }

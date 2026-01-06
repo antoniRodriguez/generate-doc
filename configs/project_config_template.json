@@ -1,9 +1,20 @@
 {
-    "project_name": "<PROJECT NAME>",
-    "project_type": "<PROJECT TYPE>",
-    "model_path": "model.onnx",
-    "dataset_root": "path to yolo dataset root folder",
-    "metrics_path": "path to metrics file",
-    "notes": "Additional information",
-    "output_format": ["markdown"]
+    "excel_path": "path/to/products.xlsx",
+    "layouts_dir": "path/to/layouts/",
+    "output_path": "verification_report.md",
+    "output_format": "markdown",
+    "columns": [
+        "Item#",
+        "EAN",
+        "Serial",
+        "Name ENG",
+        "Name ES",
+        "Name FR",
+        "Name DE",
+        "address under EAN/barcode",
+        "origin (next to EAN/barcode)",
+        "type of packaging",
+        "Batch no:"
+    ],
+    "notes": "Configuration for product layout verification"
 }
