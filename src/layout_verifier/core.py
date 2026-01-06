@@ -4,14 +4,15 @@
 # - Load product data from Excel
 # - Scan layout directory for PDF files
 # - For each layout: extract text, match to product, verify fields
-# - Generate verification report
+# - Generate verification report (or colored Excel output)
 
 from pathlib import Path
 from typing import Optional
 
 from .excel_reader import load_product_data, get_product_by_item_number, get_verification_fields
-from .layout_reader import scan_layout_directory, extract_text_from_layout
-from .verifier import verify_product_fields, VerificationSummary
+from .layout_reader import scan_layout_directory, extract_text_from_layout, extract_item_number_from_filename
+from .verifier import verify_product_fields, VerificationSummary, find_value_in_text, normalize_for_matching
+from .excel_colorizer import color_excel_cells, ColoringResult
 from .report_writer import generate_report, save_report
 from .spinner import Spinner
 from .logging_utils import log_info, log_warning, log_error
@@ -210,3 +211,109 @@ def verify_single_product(
             for fr in result.field_results
         ],
     }
+
+
+def verify_and_color_excel(
+    layout_files: list[str | Path],
+    excel_path: str | Path,
+    output_path: Optional[str | Path] = None,
+    columns: Optional[list[str]] = None,
+) -> ColoringResult:
+    """
+    Verify layouts against Excel data and color the Excel cells based on results.
+
+    This is the simplified main entry point for the verification tool.
+
+    Args:
+        layout_files: List of paths to layout files (.ai or .pdf).
+        excel_path: Path to the Excel file with product master data.
+        output_path: Where to save the colored Excel. If None, overwrites original.
+        columns: List of Excel columns to verify (optional, uses defaults).
+
+    Returns:
+        ColoringResult with summary of coloring operations.
+
+    Cell coloring:
+        - GREEN: Field value found in layout (exact or normalized match)
+        - RED: Field value NOT found in layout
+        - YELLOW: Column exists but wasn't checked (not in columns list)
+        - No change: Product not found in any layout file
+    """
+    excel_path = Path(excel_path)
+    layout_files = [Path(f) for f in layout_files]
+
+    # Load product data from Excel
+    log_info(f"Loading product data from '{excel_path.name}'...")
+    try:
+        products_df = load_product_data(excel_path, columns=columns)
+    except (FileNotFoundError, ValueError) as e:
+        log_error(f"Failed to load Excel: {e}")
+        raise
+
+    log_info(f"Loaded {len(products_df)} products from Excel.")
+    log_info(f"Processing {len(layout_files)} layout files...")
+
+    # Build verification results: {item_number: {field_name: matched}}
+    verification_results: dict[str, dict[str, bool]] = {}
+
+    spinner = Spinner("Verifying layouts...")
+    spinner.start()
+
+    try:
+        for layout_path in layout_files:
+            if not layout_path.exists():
+                log_warning(f"Layout file not found: {layout_path}")
+                continue
+
+            # Extract item number from filename
+            item_number = extract_item_number_from_filename(str(layout_path))
+            if not item_number:
+                log_warning(f"Could not extract Item# from: {layout_path.name}")
+                continue
+
+            # Get product data from Excel
+            product_data = get_product_by_item_number(products_df, item_number)
+            if product_data is None:
+                log_warning(f"No Excel entry for Item# '{item_number}'")
+                continue
+
+            # Extract fields to verify
+            expected_fields = get_verification_fields(product_data)
+            if not expected_fields:
+                log_warning(f"No fields to verify for Item# '{item_number}'")
+                continue
+
+            # Extract text from layout
+            try:
+                layout_text = extract_text_from_layout(layout_path)
+            except (FileNotFoundError, ValueError) as e:
+                log_error(f"Failed to read layout {layout_path.name}: {e}")
+                continue
+
+            # Verify each field
+            layout_text_normalized = normalize_for_matching(layout_text)
+            field_results: dict[str, bool] = {}
+
+            for field_name, expected_value in expected_fields.items():
+                found, _, _ = find_value_in_text(
+                    expected_value, layout_text, layout_text_normalized
+                )
+                field_results[field_name] = found
+
+            verification_results[item_number] = field_results
+            log_info(f"Verified Item# '{item_number}': {sum(field_results.values())}/{len(field_results)} fields matched")
+
+    finally:
+        spinner.stop()
+
+    log_info(f"Verified {len(verification_results)} products from layouts.")
+
+    # Color the Excel file
+    result = color_excel_cells(
+        excel_path=excel_path,
+        verification_results=verification_results,
+        output_path=output_path,
+        columns_to_check=columns,
+    )
+
+    return result
