@@ -5,7 +5,8 @@
 import argparse
 import sys
 import io
-from .core import verify_layouts, verify_single_product
+from pathlib import Path
+from .core import verify_layouts, verify_single_product, verify_and_color_excel
 
 # Fix Windows console encoding for Unicode output
 if sys.platform == "win32":
@@ -26,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         help="Path to the Excel file containing product master data.",
     )
 
-    # Either layouts directory or single file
+    # Layout input options
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--layouts-dir",
@@ -38,26 +39,32 @@ def parse_args() -> argparse.Namespace:
         "-l",
         help="Path to a single layout file (.ai or .pdf) to verify.",
     )
+    group.add_argument(
+        "--layouts",
+        "-L",
+        nargs="+",
+        help="List of layout files to verify (for colored Excel output).",
+    )
 
-    # Optional arguments
+    # Output options
     parser.add_argument(
         "--output",
         "-o",
         default=None,
-        help="Output path for the verification report. Defaults to 'verification_report.md' in the layouts directory.",
+        help="Output path for the result. For --color-excel mode, this is the colored Excel file.",
     )
     parser.add_argument(
         "--format",
         "-f",
-        choices=["markdown", "csv", "pdf"],
+        choices=["markdown", "csv", "pdf", "excel"],
         default="markdown",
-        help="Output format for the report (default: markdown).",
+        help="Output format: markdown, csv, pdf, or excel (colored cells). Default: markdown.",
     )
     parser.add_argument(
         "--ext",
         "-x",
         default=".ai",
-        help="File extension to scan for in batch mode (default: .ai). Use .pdf for PDF files.",
+        help="File extension to scan for in --layouts-dir mode (default: .ai).",
     )
     parser.add_argument(
         "--item",
@@ -83,8 +90,54 @@ def main() -> None:
     print("=" * 40)
     print(f"Excel file: {args.excel}")
 
-    if args.layouts_dir:
-        # Batch verification
+    # Mode 1: Colored Excel output with list of layout files
+    if args.layouts or args.format == "excel":
+        layout_files = []
+
+        if args.layouts:
+            layout_files = args.layouts
+        elif args.layouts_dir:
+            # Collect files from directory
+            layouts_dir = Path(args.layouts_dir)
+            layout_files = [str(f) for f in layouts_dir.glob(f"*{args.ext}")]
+
+        if not layout_files:
+            print("No layout files specified or found.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Layout files: {len(layout_files)}")
+        print(f"Output format: colored Excel")
+        print()
+
+        try:
+            result = verify_and_color_excel(
+                layout_files=layout_files,
+                excel_path=args.excel,
+                output_path=args.output,
+                columns=args.columns,
+            )
+
+            # Print summary
+            print()
+            print("=" * 40)
+            print("VERIFICATION COMPLETE")
+            print("=" * 40)
+            print(f"Products found in layouts: {result.products_found}")
+            print(f"Products not in layouts: {result.products_not_found}")
+            print(f"Cells colored:")
+            print(f"  - Green (matched): {result.cells_green}")
+            print(f"  - Red (not matched): {result.cells_red}")
+            print(f"  - Yellow (unchecked): {result.cells_yellow}")
+            print()
+            output_file = args.output if args.output else args.excel
+            print(f"Colored Excel saved to: {output_file}")
+
+        except Exception as e:
+            print(f"\nError: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Mode 2: Batch verification with report output
+    elif args.layouts_dir:
         print(f"Layouts directory: {args.layouts_dir}")
         print(f"File extension: {args.ext}")
         print(f"Output format: {args.format}")
@@ -117,8 +170,8 @@ def main() -> None:
             print(f"\nError: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Mode 3: Single file verification
     else:
-        # Single file verification
         print(f"Layout file: {args.layout}")
         if args.item:
             print(f"Item#: {args.item}")
